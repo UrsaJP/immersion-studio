@@ -416,7 +416,7 @@ class TranslationWorker(QRunnable):
                 srt_tmp = os.path.join(tmp, "extracted.srt")
                 subprocess.run(
                     ["ffmpeg", "-y", "-i", self.mkv_path,
-                     "-map", f"0:s:{self.track_index}", srt_tmp],
+                     "-map", f"0:{self.track_index}", srt_tmp],
                     check=True, capture_output=True,
                 )
                 out_srt = translate_srt(

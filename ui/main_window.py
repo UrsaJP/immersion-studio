@@ -367,14 +367,8 @@ class MainWindow(QMainWindow):
         """
         try:
             if panel_idx == PANEL_DASHBOARD:
-                placeholder = QWidget()
-                placeholder.setFocusPolicy(Qt.TabFocus)
-                lbl = QLabel("📊 Dashboard — Phase 3")
-                lbl.setAlignment(Qt.AlignCenter)
-                lbl.setStyleSheet(f"color: {_DARK_MUTED}; font-size: 16px;")
-                from PySide6.QtWidgets import QVBoxLayout as VBL
-                VBL(placeholder).addWidget(lbl)
-                return placeholder
+                from ui.widgets.translation_widget import TranslationWidget
+                return TranslationWidget()
 
             elif panel_idx == PANEL_PITCH:
                 try:

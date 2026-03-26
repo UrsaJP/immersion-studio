@@ -83,6 +83,7 @@ class TranslationWidget(QWidget):
         self._mkv_path: str = ""
         self._tracks: list[dict] = []        # output of list_subtitle_tracks()
         self._job_running: bool = False
+        self._pending_signals: list = []     # keeps worker signals alive past QRunnable autoDelete
 
         self._build_ui()
         self._populate_providers()
@@ -216,7 +217,7 @@ class TranslationWidget(QWidget):
 
         # Try live model cache first
         cache = load_model_cache()
-        cached_models: list[str] = cache.get(provider_id, [])
+        cached_models: list[str] = cache.get(provider_id, {}).get("models", [])
 
         # Fall back to static suggested models from AI_PROVIDERS
         static_models: list[str] = []
@@ -349,7 +350,18 @@ class TranslationWidget(QWidget):
         )
 
         # ── weakref connections (Qt.QueuedConnection) ─────────────────────────
+        # Keep strong ref to signals until callbacks fire — prevents SIGBUS
+        # when QRunnable autoDelete destroys the worker before Qt delivers
+        # the queued signal events (same pattern as settings_widget.py).
+        signals = worker.signals
+        self._pending_signals.append(signals)
         weak_self = weakref.ref(self)
+
+        def _release() -> None:
+            try:
+                self._pending_signals.remove(signals)
+            except ValueError:
+                pass
 
         def _on_progress(current: int, total: int) -> None:
             w = weak_self()
@@ -357,18 +369,20 @@ class TranslationWidget(QWidget):
                 w._handle_progress(current, total)
 
         def _on_finished(output_path: str) -> None:
+            _release()
             w = weak_self()
             if w is not None:
                 w._handle_finished(output_path)
 
         def _on_error(message: str) -> None:
+            _release()
             w = weak_self()
             if w is not None:
                 w._handle_error(message)
 
-        worker.signals.progress.connect(_on_progress, Qt.QueuedConnection)
-        worker.signals.finished.connect(_on_finished, Qt.QueuedConnection)
-        worker.signals.error.connect(_on_error, Qt.QueuedConnection)
+        signals.progress.connect(_on_progress, Qt.QueuedConnection)
+        signals.finished.connect(_on_finished, Qt.QueuedConnection)
+        signals.error.connect(_on_error, Qt.QueuedConnection)
 
         # ── Disable UI while running ──────────────────────────────────────────
         self._job_running = True

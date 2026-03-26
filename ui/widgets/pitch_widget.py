@@ -100,6 +100,21 @@ class PitchWidget(QWidget):
 
         self._web_view = QWebEngineView(self)
         self._web_view.setFocusPolicy(Qt.TabFocus)
+
+        # Allow audio playback without a prior user gesture (autoplay) and
+        # allow local files to reference other local files (e.g. audio data).
+        try:
+            from PySide6.QtWebEngineCore import QWebEngineSettings
+            ws = self._web_view.settings()
+            ws.setAttribute(
+                QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False
+            )
+            ws.setAttribute(
+                QWebEngineSettings.WebAttribute.LocalContentCanAccessLocalUrls, True
+            )
+        except Exception as e:
+            logger.warning("Could not configure WebEngine audio settings: %s", e)
+
         url = QUrl.fromLocalFile(str(MINIMAL_PAIRS_INDEX))
         self._web_view.load(url)
         layout.addWidget(self._web_view)
