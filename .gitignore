@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+*.bak.db
+*.pre_restore.db
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Compiled Qt
+*.pyc
+
+# Build output
+*.dmg
+*.app

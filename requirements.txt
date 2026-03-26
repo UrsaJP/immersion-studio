@@ -1,0 +1,18 @@
+PySide6                # Qt6 GUI framework
+PySide6-WebEngine      # QWebEngineView — Plotly charts (dashboard) + minimal-pairs HVPT
+plotly                 # Interactive dashboard charts
+librosa                # PYIN pitch extraction, MFCC
+fastdtw                # O(N log N) Dynamic Time Warping
+parselmouth            # Praat bindings (optional formant analysis)
+sounddevice            # Microphone recording
+numpy                  # Numerical ops
+keyring                # macOS Keychain storage for API keys
+psutil                 # Session active/passive foreground detection
+pyinstaller            # macOS .app bundling
+lxml                   # XML parsing
+
+# Keep from AIST:
+requests               # HTTP (AnkiConnect, AI providers)
+fugashi                # MeCab bindings
+pykakasi               # Kana conversion
+openai-whisper         # Local Whisper transcription (for NWD on unprocessed files)
