@@ -276,7 +276,7 @@ class SettingsWidget(QWidget):
         self._am_threshold_combo.addItem("1 day   (reviewed at least once)", 1)
         self._am_threshold_combo.addItem("7 days  (learning)", 7)
         self._am_threshold_combo.addItem("21 days (mature)", 21)
-        self._am_threshold_combo.setCurrentIndex(1)   # default: reviewed at least once
+        self._am_threshold_combo.setCurrentIndex(3)   # default: mature (≥21 days)
         self._am_threshold_combo.setToolTip(
             "Only morphs whose highest review interval meets this threshold "
             "are counted as 'known' for NWD scoring."
