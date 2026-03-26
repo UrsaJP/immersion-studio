@@ -82,6 +82,8 @@ class SettingsWidget(QWidget):
         self.setFocusPolicy(Qt.TabFocus)
         self._db_path = db_path
         self._model_cache: dict = load_model_cache()
+        # Strong refs to keep ModelFetchWorker.signals alive until callbacks fire
+        self._pending_signals: list = []
 
         self._build_ui()
         self._load_settings_into_ui()
@@ -678,7 +680,21 @@ class SettingsWidget(QWidget):
         worker = ModelFetchWorker(pid, api_key, base_url)
         widget_ref = weakref.ref(self)
 
+        # Keep a strong Python reference to signals until the callback fires.
+        # Without this, worker goes out of scope when this function returns,
+        # worker.signals gets GC'd, and Qt's queued signal delivery crashes
+        # (EXC_ARM_DA_ALIGN / SIGBUS) accessing the deleted QObject.
+        signals = worker.signals
+        self._pending_signals.append(signals)
+
+        def _release_signals() -> None:
+            try:
+                self._pending_signals.remove(signals)
+            except ValueError:
+                pass
+
         def _on_finished(provider_id: str, models: list) -> None:
+            _release_signals()
             w = widget_ref()
             if w is None:
                 return
@@ -698,6 +714,7 @@ class SettingsWidget(QWidget):
             w._refresh_btn.setText("↻ Refresh")
 
         def _on_error(provider_id: str, message: str) -> None:
+            _release_signals()
             w = widget_ref()
             if w is None:
                 return
@@ -705,8 +722,8 @@ class SettingsWidget(QWidget):
             w._refresh_btn.setText("✖ Error")
             QTimer.singleShot(3000, lambda: w._refresh_btn.setText("↻ Refresh"))
 
-        worker.signals.finished.connect(_on_finished, Qt.QueuedConnection)
-        worker.signals.error.connect(_on_error, Qt.QueuedConnection)
+        signals.finished.connect(_on_finished, Qt.QueuedConnection)
+        signals.error.connect(_on_error, Qt.QueuedConnection)
         self._refresh_btn.setText("…")
         QThreadPool.globalInstance().start(worker)
 
@@ -745,12 +762,12 @@ class SettingsWidget(QWidget):
         dlayout = QFormLayout(dialog)
 
         provider_combo = QComboBox()
-        provider_combo.setFocusPolicy(Qt.TabFocus)
+        provider_combo.setFocusPolicy(Qt.StrongFocus)
         for pid, pdata in PROVIDERS.items():
             provider_combo.addItem(pdata["name"], pid)
 
         key_edit = QLineEdit()
-        key_edit.setFocusPolicy(Qt.TabFocus)
+        key_edit.setFocusPolicy(Qt.StrongFocus)
         key_edit.setPlaceholderText("sk-…  or  your API key")
         key_edit.setEchoMode(QLineEdit.Password)
 
