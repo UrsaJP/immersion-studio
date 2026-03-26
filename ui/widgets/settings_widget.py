@@ -266,6 +266,25 @@ class SettingsWidget(QWidget):
         )
         am_layout.addWidget(self._am_path_label)
 
+        # Threshold selector
+        threshold_row = QHBoxLayout()
+        threshold_label = QLabel("Known = interval ≥")
+        threshold_label.setFocusPolicy(Qt.TabFocus)
+        self._am_threshold_combo = QComboBox()
+        self._am_threshold_combo.setFocusPolicy(Qt.TabFocus)
+        self._am_threshold_combo.addItem("0 days  (all morphs AnkiMorphs has seen)", 0)
+        self._am_threshold_combo.addItem("1 day   (reviewed at least once)", 1)
+        self._am_threshold_combo.addItem("7 days  (learning)", 7)
+        self._am_threshold_combo.addItem("21 days (mature)", 21)
+        self._am_threshold_combo.setCurrentIndex(1)   # default: reviewed at least once
+        self._am_threshold_combo.setToolTip(
+            "Only morphs whose highest review interval meets this threshold "
+            "are counted as 'known' for NWD scoring."
+        )
+        threshold_row.addWidget(threshold_label)
+        threshold_row.addWidget(self._am_threshold_combo, stretch=1)
+        am_layout.addLayout(threshold_row)
+
         am_action_row = QHBoxLayout()
         self._am_sync_btn = QPushButton("Sync from AnkiMorphs DB")
         self._am_sync_btn.setFocusPolicy(Qt.TabFocus)
@@ -382,20 +401,28 @@ class SettingsWidget(QWidget):
         """Import morphs directly from the AnkiMorphs SQLite database."""
         if not self._am_db_path:
             return
+        min_interval: int = self._am_threshold_combo.currentData() or 0
         try:
             from core.db import DatabaseManager
             from core.nwd import import_ankimorph_db
             db = DatabaseManager(path=self._db_path)
-            count = import_ankimorph_db(db, ankimorph_db_path=self._am_db_path)
+            count = import_ankimorph_db(
+                db,
+                ankimorph_db_path=self._am_db_path,
+                min_interval=min_interval,
+            )
             if count == 0:
                 self._am_status_label.setText(
-                    "⚠  0 morphs found — run AnkiMorphs recalc in Anki first"
+                    "⚠  0 morphs at this threshold — try a lower interval or run recalc"
                 )
                 self._am_status_label.setStyleSheet(f"color: {_DARK_AMBER};")
             else:
                 self._am_status_label.setText(f"✔  Synced {count:,} morphs")
                 self._am_status_label.setStyleSheet(f"color: {_DARK_GREEN};")
-            logger.info("AnkiMorphs DB sync: %d morphs from %s", count, self._am_db_path)
+            logger.info(
+                "AnkiMorphs DB sync: %d morphs (min_interval=%d) from %s",
+                count, min_interval, self._am_db_path,
+            )
         except Exception as exc:
             self._am_status_label.setText(f"✖  {exc}")
             self._am_status_label.setStyleSheet(f"color: {_DARK_RED};")
