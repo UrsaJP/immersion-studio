@@ -119,6 +119,7 @@ def calculate_nwd(media_path: str, db: DatabaseManager) -> float:
             if token and len(token) >= MIN_TOKEN_LEN and _JP_RE.search(token):
                 unique_words.add(token)
 
+    known_count = 0
     if not unique_words:
         logger.info("calculate_nwd: no Japanese tokens in subtitles for %s", media_path)
         score = 0.0
@@ -155,7 +156,7 @@ def calculate_nwd(media_path: str, db: DatabaseManager) -> float:
                 score,
                 zone,
                 len(unique_words),
-                len(unique_words) - (int(score * len(unique_words))),
+                len(unique_words) - known_count,
                 now,
             ),
         )

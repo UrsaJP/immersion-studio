@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.config import (
-    PROVIDERS, load_api_key, save_api_key, delete_api_key,
+    PROVIDERS, get_provider, load_api_key, save_api_key, delete_api_key,
     load_is_settings, save_is_settings, load_model_cache, save_model_cache,
     ModelFetchWorker, _is_cache_fresh,
 )
@@ -639,10 +639,12 @@ class SettingsWidget(QWidget):
         models = cached.get("models", [])
 
         if not models or not _is_cache_fresh(provider_id, fetched_at):
-            # Fall back to static suggested models from PROVIDERS
-            pdata = PROVIDERS.get(provider_id, {})
-            models = pdata.get("static_models", [pdata.get("default_model", "")])
-            models = [m for m in models if m]
+            # Fall back to the full suggested models list from AI_PROVIDERS
+            pdata = get_provider(provider_id)
+            models = pdata.get("models") or pdata.get("static_models") or []
+            if not models:
+                default = pdata.get("default_model", "")
+                models = [default] if default else []
 
         for m in models:
             combo.addItem(m)

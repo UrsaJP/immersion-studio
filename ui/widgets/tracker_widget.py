@@ -162,6 +162,8 @@ class TrackerWidget(QWidget):
         self._db      = DatabaseManager(path=db_path)
         # maps media_path → {score, zone, top_unknowns}
         self._item_data: dict[str, dict] = {}
+        # keeps NWDWorker.signals alive until callbacks fire (prevents SIGBUS)
+        self._pending_signals: list = []
         self._build_ui()
         self._load_existing()
 
@@ -316,18 +318,38 @@ class TrackerWidget(QWidget):
 
             worker = NWDWorker(media_path, srt_path, self._db)
 
-            def _on_scored(mp: str, score: float, zone: str, unknowns: list) -> None:
+            # Hold strong ref to signals until the callback fires.
+            # NWDWorker uses autoDelete=True, so worker is deleted by Qt's
+            # thread pool after run() completes. Without this, worker.signals
+            # is GC'd and the QueuedConnection delivery crashes (SIGBUS).
+            signals = worker.signals
+            self._pending_signals.append(signals)
+
+            def _make_release(sig):
+                def _release():
+                    try:
+                        self._pending_signals.remove(sig)
+                    except ValueError:
+                        pass
+                return _release
+
+            _release = _make_release(signals)
+
+            def _on_scored(mp: str, score: float, zone: str, unknowns: list,
+                           _rel=_release) -> None:
+                _rel()
                 w = weak_self()
                 if w is not None:
                     w._handle_scored(mp, score, zone, unknowns)
 
-            def _on_error(mp: str, message: str) -> None:
+            def _on_error(mp: str, message: str, _rel=_release) -> None:
+                _rel()
                 w = weak_self()
                 if w is not None:
                     w._handle_error(mp, message)
 
-            worker.signals.scored.connect(_on_scored, Qt.QueuedConnection)
-            worker.signals.error.connect(_on_error, Qt.QueuedConnection)
+            signals.scored.connect(_on_scored, Qt.QueuedConnection)
+            signals.error.connect(_on_error, Qt.QueuedConnection)
             QThreadPool.globalInstance().start(worker)
 
     def _handle_scored(self, media_path: str, score: float, zone: str, unknowns: list) -> None:
