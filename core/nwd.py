@@ -282,6 +282,134 @@ def import_ankimorph_vocab(tsv_path: str | Path, db: DatabaseManager) -> int:
     return len(rows)
 
 
+# ── AnkiMorphs DB path helpers ────────────────────────────────────────────────
+
+ANKIMORPH_DB_FILENAME: str = "ankimorphs.db"
+ANKI2_BASE: Path = Path.home() / "Library" / "Application Support" / "Anki2"
+
+
+def find_ankimorph_db() -> Path | None:
+    """Search for the AnkiMorphs database under ``~/Library/Application Support/Anki2``.
+
+    Scans all profile subdirectories for ``ankimorphs.db``.  Returns the first
+    match found (alphabetically by profile name), or ``None`` if not found.
+
+    Returns:
+        Path to ``ankimorphs.db``, or ``None``.
+    """
+    if not ANKI2_BASE.exists():
+        return None
+    for candidate in sorted(ANKI2_BASE.iterdir()):
+        db = candidate / ANKIMORPH_DB_FILENAME
+        if db.exists():
+            return db
+    return None
+
+
+def import_ankimorph_db(
+    db: DatabaseManager,
+    ankimorph_db_path: str | Path | None = None,
+    min_interval: int = 0,
+) -> int:
+    """Import known morphs directly from the AnkiMorphs SQLite database.
+
+    Reads the ``Morphs`` table from the AnkiMorphs database and upserts each
+    morph lemma into ``known_vocab``.  Both the lemma and its inflection are
+    stored so NWD scoring can match conjugated surface forms.
+
+    Auto-detects the database path if *ankimorph_db_path* is not given by
+    calling :func:`find_ankimorph_db`.
+
+    Schema read:
+        ``Morphs(lemma TEXT PK, inflection TEXT PK,
+                 highest_lemma_learning_interval INTEGER,
+                 highest_inflection_learning_interval INTEGER)``
+
+    Args:
+        db:                 Open ``DatabaseManager`` instance.
+        ankimorph_db_path:  Explicit path to ``ankimorphs.db``.  If ``None``,
+                            auto-detected via :func:`find_ankimorph_db`.
+        min_interval:       Only import morphs whose
+                            ``highest_lemma_learning_interval`` is at least
+                            this value.  ``0`` imports all morphs (any seen
+                            card).  Use ``21`` for mature-only.
+
+    Returns:
+        Number of words upserted into ``known_vocab``.
+
+    Raises:
+        FileNotFoundError: If the AnkiMorphs DB cannot be found.
+        RuntimeError:      If the DB cannot be read.
+    """
+    import sqlite3 as _sqlite3
+
+    if ankimorph_db_path is None:
+        ankimorph_db_path = find_ankimorph_db()
+    if ankimorph_db_path is None:
+        raise FileNotFoundError(
+            f"AnkiMorphs database not found under {ANKI2_BASE}. "
+            "Run AnkiMorphs recalc in Anki first."
+        )
+
+    ankimorph_db_path = Path(ankimorph_db_path)
+    if not ankimorph_db_path.exists():
+        raise FileNotFoundError(f"AnkiMorphs database not found: {ankimorph_db_path}")
+
+    now = datetime.now().isoformat()
+    rows: list[tuple[str, str, str, str]] = []
+
+    try:
+        conn = _sqlite3.connect(str(ankimorph_db_path))
+        try:
+            cursor = conn.execute(
+                """
+                SELECT lemma, inflection
+                FROM Morphs
+                WHERE highest_lemma_learning_interval >= ?
+                ORDER BY lemma
+                """,
+                (min_interval,),
+            )
+            for lemma, inflection in cursor.fetchall():
+                lemma     = (lemma     or "").strip()
+                inflection = (inflection or "").strip()
+                if lemma:
+                    rows.append((lemma, inflection, "ankimorph", now))
+        finally:
+            conn.close()
+    except Exception as exc:
+        raise RuntimeError(
+            f"import_ankimorph_db: failed to read {ankimorph_db_path}: {exc}"
+        ) from exc
+
+    if not rows:
+        logger.warning(
+            "import_ankimorph_db: no morphs found in %s (min_interval=%d). "
+            "Run AnkiMorphs recalc in Anki to populate the database.",
+            ankimorph_db_path, min_interval,
+        )
+        return 0
+
+    with db.connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO known_vocab (word, reading, source, added_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(word) DO UPDATE SET
+                reading  = excluded.reading,
+                source   = excluded.source,
+                added_at = excluded.added_at
+            """,
+            rows,
+        )
+
+    logger.info(
+        "import_ankimorph_db: upserted %d morphs from %s",
+        len(rows), ankimorph_db_path,
+    )
+    return len(rows)
+
+
 def import_seed_vocab(
     path: str | Path,
     db: DatabaseManager,

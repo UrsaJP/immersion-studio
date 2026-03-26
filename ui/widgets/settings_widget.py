@@ -246,33 +246,42 @@ class SettingsWidget(QWidget):
         am_layout.setSpacing(8)
 
         am_desc = QLabel(
-            "Import your AnkiMorphs TSV export to update the known-word list "
-            "used for NWD scoring. Re-import whenever you study new cards."
+            "Sync known morphs directly from the AnkiMorphs database. "
+            "Run AnkiMorphs recalc in Anki first, then click Sync."
         )
         am_desc.setWordWrap(True)
         am_desc.setStyleSheet(f"color: {_DARK_MUTED};")
         am_layout.addWidget(am_desc)
 
-        am_file_row = QHBoxLayout()
-        self._am_path_label = QLabel("(no file selected)")
+        # Auto-detect DB path and show it
+        from core.nwd import find_ankimorph_db
+        detected = find_ankimorph_db()
+        self._am_db_path: str = str(detected) if detected else ""
+        db_path_display = self._am_db_path or "Not found — run AnkiMorphs recalc in Anki first"
+        self._am_path_label = QLabel(db_path_display)
         self._am_path_label.setFocusPolicy(Qt.TabFocus)
-        self._am_path_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._am_path_label.setWordWrap(True)
+        self._am_path_label.setStyleSheet(
+            f"color: {_DARK_TEXT};" if detected else f"color: {_DARK_AMBER};"
+        )
+        am_layout.addWidget(self._am_path_label)
+
+        am_action_row = QHBoxLayout()
+        self._am_sync_btn = QPushButton("Sync from AnkiMorphs DB")
+        self._am_sync_btn.setFocusPolicy(Qt.TabFocus)
+        self._am_sync_btn.setEnabled(bool(detected))
+        self._am_sync_btn.clicked.connect(self._on_am_sync)
+
         am_browse_btn = QPushButton("Browse…")
         am_browse_btn.setFocusPolicy(Qt.TabFocus)
         am_browse_btn.clicked.connect(self._on_am_browse)
-        am_file_row.addWidget(self._am_path_label, stretch=1)
-        am_file_row.addWidget(am_browse_btn)
-        am_layout.addLayout(am_file_row)
+        am_browse_btn.setToolTip("Manually locate ankimorphs.db")
 
-        am_action_row = QHBoxLayout()
-        self._am_import_btn = QPushButton("Import AnkiMorphs TSV")
-        self._am_import_btn.setFocusPolicy(Qt.TabFocus)
-        self._am_import_btn.setEnabled(False)
-        self._am_import_btn.clicked.connect(self._on_am_import)
         self._am_status_label = QLabel("")
         self._am_status_label.setFocusPolicy(Qt.TabFocus)
         self._am_status_label.setWordWrap(True)
-        am_action_row.addWidget(self._am_import_btn)
+        am_action_row.addWidget(self._am_sync_btn)
+        am_action_row.addWidget(am_browse_btn)
         am_action_row.addWidget(self._am_status_label, stretch=1)
         am_layout.addLayout(am_action_row)
 
@@ -356,34 +365,41 @@ class SettingsWidget(QWidget):
     # ── Data tab slots ─────────────────────────────────────────────────────────
 
     def _on_am_browse(self) -> None:
-        """Open a file picker for the AnkiMorphs TSV export."""
+        """Manually locate ankimorphs.db."""
+        from pathlib import Path as _Path
+        default_dir = str(_Path.home() / "Library" / "Application Support" / "Anki2")
         path, _ = QFileDialog.getOpenFileName(
-            self, "Select AnkiMorphs TSV", "",
-            "TSV files (*.tsv);;All files (*)",
+            self, "Locate ankimorphs.db", default_dir,
+            "AnkiMorphs DB (ankimorphs.db);;All files (*)",
         )
         if path:
-            self._am_tsv_path: str = path
+            self._am_db_path = path
             self._am_path_label.setText(path)
-            self._am_path_label.setToolTip(path)
-            self._am_import_btn.setEnabled(True)
+            self._am_path_label.setStyleSheet(f"color: {_DARK_TEXT};")
+            self._am_sync_btn.setEnabled(True)
 
-    def _on_am_import(self) -> None:
-        """Import the selected AnkiMorphs TSV into known_vocab."""
-        tsv_path = getattr(self, "_am_tsv_path", "")
-        if not tsv_path:
+    def _on_am_sync(self) -> None:
+        """Import morphs directly from the AnkiMorphs SQLite database."""
+        if not self._am_db_path:
             return
         try:
             from core.db import DatabaseManager
-            from core.nwd import import_ankimorph_vocab
+            from core.nwd import import_ankimorph_db
             db = DatabaseManager(path=self._db_path)
-            count = import_ankimorph_vocab(tsv_path, db)
-            self._am_status_label.setText(f"✔  Imported {count:,} words")
-            self._am_status_label.setStyleSheet(f"color: {_DARK_GREEN};")
-            logger.info("AnkiMorphs import: %d words from %s", count, tsv_path)
+            count = import_ankimorph_db(db, ankimorph_db_path=self._am_db_path)
+            if count == 0:
+                self._am_status_label.setText(
+                    "⚠  0 morphs found — run AnkiMorphs recalc in Anki first"
+                )
+                self._am_status_label.setStyleSheet(f"color: {_DARK_AMBER};")
+            else:
+                self._am_status_label.setText(f"✔  Synced {count:,} morphs")
+                self._am_status_label.setStyleSheet(f"color: {_DARK_GREEN};")
+            logger.info("AnkiMorphs DB sync: %d morphs from %s", count, self._am_db_path)
         except Exception as exc:
             self._am_status_label.setText(f"✖  {exc}")
             self._am_status_label.setStyleSheet(f"color: {_DARK_RED};")
-            logger.error("AnkiMorphs import failed: %s", exc, exc_info=True)
+            logger.error("AnkiMorphs DB sync failed: %s", exc, exc_info=True)
 
     def _on_seed_browse(self) -> None:
         """Open a file picker for the seed vocab file."""
